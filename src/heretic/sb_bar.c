@@ -917,7 +917,7 @@ void SB_Drawer(void)
             {
                 const int time = leveltime / TICRATE;
                 const int x_shift = english_language ? 40 : 58;
-                char str[16];
+                char str[21];
 
                 if (english_language)
                 {
@@ -930,7 +930,14 @@ void SB_Drawer(void)
                     RD_M_DrawTextSmallRUS("EHJDTYM", wide_4_3, 126 - map_active, tr_title_color);
                 }
 
-                sprintf(str, "%02d:%02d:%02d", time/3600, (time%3600)/60, time%60);
+                if (automapactive || stats_level_name)
+                {
+                    sprintf(str, "%02d:%02d:%02d", time/3600, (time%3600)/60, time%60);
+                }
+                else
+                {
+                    sprintf(str, "E%dM%d %02d:%02d:%02d", gameepisode, gamemap, time/3600, (time%3600)/60, time%60);
+                }
 
                 dp_translation = cr_item_color;
                 RD_M_DrawTextA(str, wide_4_3 + x_shift, 126 - map_active);
