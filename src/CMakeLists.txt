@@ -2,6 +2,67 @@ foreach(SUBDIR base doom heretic hexen)
     add_subdirectory("${SUBDIR}")
 endforeach()
 
+if(NOT WIN32)
+    if(APPLE)
+        find_program(RD_DSYMUTIL NAMES dsymutil llvm-dsymutil)
+        if(NOT RD_DSYMUTIL)
+            message(FATAL_ERROR "Split debug info requires dsymutil on macOS")
+        endif()
+    else()
+        find_program(RD_OBJCOPY NAMES llvm-objcopy objcopy)
+        if(NOT RD_OBJCOPY)
+            message(FATAL_ERROR "Split debug info requires objcopy or llvm-objcopy")
+        endif()
+        if(NOT CMAKE_STRIP)
+            message(FATAL_ERROR "Split debug info requires a strip tool")
+        endif()
+    endif()
+endif()
+
+function(rd_attach_split_debug target output_path)
+    if(WIN32)
+        return()
+    endif()
+
+    if(APPLE)
+        set(debug_path "${output_path}.dSYM")
+        add_custom_command(TARGET "${target}" POST_BUILD
+            COMMAND "${CMAKE_COMMAND}" -E rm -rf "${debug_path}"
+            COMMAND "${RD_DSYMUTIL}" "$<TARGET_FILE:${target}>" -o "${debug_path}"
+            COMMAND "${CMAKE_STRIP}" -S "$<TARGET_FILE:${target}>"
+        )
+    else()
+        set(debug_path "${output_path}.debug")
+        add_custom_command(TARGET "${target}" POST_BUILD
+            COMMAND "${RD_OBJCOPY}" --only-keep-debug "$<TARGET_FILE:${target}>" "${debug_path}"
+            COMMAND "${CMAKE_STRIP}" --strip-unneeded "$<TARGET_FILE:${target}>"
+            COMMAND "${RD_OBJCOPY}" --add-gnu-debuglink="${debug_path}" "$<TARGET_FILE:${target}>"
+        )
+    endif()
+endfunction()
+
+function(rd_install_split_debug target output_path)
+    if(WIN32 AND MSVC)
+        install(FILES
+            "$<TARGET_PDB_FILE:${target}>"
+            DESTINATION .
+            OPTIONAL
+        )
+    elseif(APPLE)
+        install(DIRECTORY
+            "${output_path}.dSYM"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+            OPTIONAL
+        )
+    else()
+        install(FILES
+            "${output_path}.debug"
+            DESTINATION "${CMAKE_INSTALL_BINDIR}"
+            OPTIONAL
+        )
+    endif()
+endfunction()
+
 # Common library
 add_library(Common STATIC EXCLUDE_FROM_ALL
     aes_prng.c          aes_prng.h
@@ -231,6 +292,7 @@ foreach(MODULE ${COMPILE_MODULES})
         # Split debug
         attach_split_debug("${PROGRAM_PREFIX}${MODULE}")
     endif()
+    rd_install_split_debug("${PROGRAM_PREFIX}${MODULE}" "$<TARGET_FILE:${PROGRAM_PREFIX}${MODULE}>")
 
     # Applocal dlls (already checked for python or cmake 3.16)
     if(WIN32 AND NOT VCPKG_TOOLCHAIN)
